@@ -1,3 +1,6 @@
+install:
+	elm-package install
+
 live: install
 	elm-live Main.elm --warn --output=app.js --open
 
