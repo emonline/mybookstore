@@ -3,6 +3,8 @@ module Main exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Http
+import HttpBuilder exposing (..)
 import Dict exposing (Dict)
 
 
@@ -23,6 +25,10 @@ type alias Review =
 
 type alias Book =
     { title : String
+    , subtitle : String
+    , authors : List String
+    , publish_date : String
+    , url : String
     , review : Review
     }
 
@@ -35,46 +41,70 @@ type Msg
     | Review ISBN
     | SetReview ISBN Review
     | CloseReviewForm
+    | BookResponse (Result Http.Error ())
 
 
 emptyBook : Book
 emptyBook =
-    { title = "", review = "" }
+    { title = ""
+    , subtitle = ""
+    , authors = []
+    , publish_date = ""
+    , url = ""
+    , review = ""
+    }
 
 
-update : Msg -> Model -> Model
+init : ( Model, Cmd Msg )
+init =
+    let
+        model =
+            { isbn_form = ""
+            , books = Dict.fromList [ ( "0385472579", emptyBook ) ]
+            , editing = Just "toto"
+            }
+    in
+        ( model, requestBooks (Dict.keys model.books) )
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         NewISBN isbn ->
-            { model | isbn_form = isbn }
+            ( { model | isbn_form = isbn }, Cmd.none )
 
         AddBook ->
-            { model | books = Dict.insert model.isbn_form emptyBook model.books, isbn_form = "" }
+            ( { model | books = Dict.insert model.isbn_form emptyBook model.books, isbn_form = "" }, requestBooks [ model.isbn_form ] )
 
         EditBook isbn ->
-            { model | isbn_form = isbn, books = Dict.remove isbn model.books }
+            ( { model | isbn_form = isbn, books = Dict.remove isbn model.books }, Cmd.none )
 
         RemoveBook isbn ->
-            { model | books = Dict.remove isbn model.books }
+            ( { model | books = Dict.remove isbn model.books }, Cmd.none )
 
         Review isbn ->
             case model.editing of
                 Nothing ->
-                    { model | editing = Just isbn }
+                    ( { model | editing = Just isbn }, Cmd.none )
 
                 Just previous ->
                     if previous == isbn then
-                        { model | editing = Nothing }
+                        ( { model | editing = Nothing }, Cmd.none )
                     else
-                        { model | editing = Just isbn }
+                        ( { model | editing = Just isbn }, Cmd.none )
 
         SetReview isbn review ->
-            { model
+            ( { model
                 | books = Dict.update isbn (updateBook review) model.books
-            }
+              }
+            , Cmd.none
+            )
 
         CloseReviewForm ->
-            { model | editing = Nothing }
+            ( { model | editing = Nothing }, Cmd.none )
+
+        BookResponse _ ->
+            ( model, Cmd.none )
 
 
 updateBook : Review -> Maybe Book -> Maybe Book
@@ -85,6 +115,17 @@ updateBook review book =
 
         Just book ->
             Just { book | review = review }
+
+
+requestBooks : List ISBN -> Cmd Msg
+requestBooks isbns =
+    HttpBuilder.get "http://openlibrary.org/api/books"
+        |> withQueryParams
+            [ ( "bibkeys", String.join "," <| List.map (\x -> "ISBN:" ++ x) isbns )
+            , ( "jscmd", "data" )
+            , ( "format", "json" )
+            ]
+        |> send BookResponse
 
 
 view : Model -> Html Msg
@@ -146,8 +187,9 @@ displayBook ( isbn, book ) =
 
 main : Program Never Model Msg
 main =
-    beginnerProgram
-        { model = { isbn_form = "", books = Dict.fromList [ ( "toto", emptyBook ) ], editing = Just "toto" }
+    program
+        { init = init
         , view = view
         , update = update
+        , subscriptions = always Sub.none
         }
