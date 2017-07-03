@@ -1,11 +1,13 @@
 module Main exposing (..)
 
 import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (..)
+import Html.Attributes as HA
+import Html.Events as HE
 import Http
 import HttpBuilder exposing (..)
 import Dict exposing (Dict)
+import Json.Decode as Decode exposing (Decoder)
+import Json.Decode.Pipeline exposing (decode, required, optional, hardcoded)
 
 
 type alias Model =
@@ -23,10 +25,15 @@ type alias Review =
     String
 
 
+type alias Author =
+    { name : String
+    }
+
+
 type alias Book =
     { title : String
     , subtitle : String
-    , authors : List String
+    , authors : List Author
     , publish_date : String
     , url : String
     , review : Review
@@ -95,7 +102,7 @@ update msg model =
 
         SetReview isbn review ->
             ( { model
-                | books = Dict.update isbn (updateBook review) model.books
+                | books = Dict.update isbn (Maybe.map (\book -> { book | review = review })) model.books
               }
             , Cmd.none
             )
@@ -105,16 +112,6 @@ update msg model =
 
         BookResponse _ ->
             ( model, Cmd.none )
-
-
-updateBook : Review -> Maybe Book -> Maybe Book
-updateBook review book =
-    case book of
-        Nothing ->
-            Nothing
-
-        Just book ->
-            Just { book | review = review }
 
 
 requestBooks : List ISBN -> Cmd Msg
@@ -128,12 +125,40 @@ requestBooks isbns =
         |> send BookResponse
 
 
+extractISBN : String -> ISBN
+extractISBN value =
+    String.dropLeft 5 value
+
+
+decodeBooks : Decoder (Dict ISBN Book)
+decodeBooks =
+    Decode.keyValuePairs bookDecoder
+        |> Decode.map (List.map (Tuple.mapFirst extractISBN) >> Dict.fromList)
+
+
+bookDecoder : Decoder Book
+bookDecoder =
+    decode Book
+        |> required "title" Decode.string
+        |> required "subtitle" Decode.string
+        |> required "authors" (Decode.list authorDecoder)
+        |> required "publish_date" Decode.string
+        |> required "url" Decode.string
+        |> hardcoded ""
+
+
+authorDecoder : Decoder Author
+authorDecoder =
+    decode Author
+        |> required "name" Decode.string
+
+
 view : Model -> Html Msg
 view model =
-    div [ id "content" ]
-        [ Html.form [ onSubmit AddBook, action "#" ]
+    div [ HA.id "content" ]
+        [ Html.form [ HE.onSubmit AddBook, HA.action "#" ]
             [ text "ISBN: "
-            , input [ onInput NewISBN, value model.isbn_form ] []
+            , input [ HE.onInput NewISBN, HA.value model.isbn_form ] []
             , button [] [ text "Add" ]
             ]
         , Dict.toList model.books
@@ -161,14 +186,14 @@ reviewForm isbn books =
             in
                 div []
                     [ textarea
-                        [ cols 30
-                        , rows 6
-                        , placeholder <| "Add review here for " ++ isbn
-                        , value book.review
-                        , onInput (SetReview isbn)
+                        [ HA.cols 30
+                        , HA.rows 6
+                        , HA.placeholder <| "Add review here for " ++ isbn
+                        , HA.value book.review
+                        , HE.onInput (SetReview isbn)
                         ]
                         []
-                    , button [ onClick CloseReviewForm ] [ text "Save" ]
+                    , button [ HE.onClick CloseReviewForm ] [ text "Save" ]
                     ]
 
 
@@ -177,11 +202,11 @@ displayBook ( isbn, book ) =
     li []
         [ text isbn
         , text " "
-        , a [ href "#", onClick (EditBook isbn) ] [ text "Edit" ]
+        , a [ HA.href "#", HE.onClick (EditBook isbn) ] [ text "Edit" ]
         , text " - "
-        , a [ href "#", onClick (RemoveBook isbn) ] [ text "Remove" ]
+        , a [ HA.href "#", HE.onClick (RemoveBook isbn) ] [ text "Remove" ]
         , text " - "
-        , a [ href "#", onClick (Review isbn) ] [ text "Review" ]
+        , a [ HA.href "#", HE.onClick (Review isbn) ] [ text "Review" ]
         ]
 
 
